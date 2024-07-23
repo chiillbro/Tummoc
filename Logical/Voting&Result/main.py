@@ -13,10 +13,10 @@ def print_winner(candidate_votes):
         print(winner)
 
 def main():
-    candidates = ["Alice", "Bob", "Charlie"]
+    candidates = ["Alice", "Bob", "Charlie"] #Example list of candidates
     candidate_votes = {candidate: 0 for candidate in candidates}
 
-    votes = ["Alice", "Bob", "Charlie", "Alice", "Alice", "Bob", "David"]
+    votes = ["Alice", "Bob", "Charlie", "Alice", "Alice", "Bob", "David"] #Example list of votes
 
     for name in votes:
         success = vote(candidate_votes, name)

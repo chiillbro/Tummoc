@@ -1,10 +1,13 @@
 from fastapi import FastAPI, HTTPException, Depends, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from pydantic import BaseModel
+from datetime import datetime, timedelta
+import pytz
 
 from models import Base, User
 
@@ -25,6 +28,22 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+# Pydantic models
+class UserCreate(BaseModel):
+    username: str
+    password: str
+
+class UserResponse(BaseModel):
+    username: str
+    password : str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: str
+
 def get_db():
     db = SessionLocal()
     try:
@@ -40,7 +59,9 @@ def get_password_hash(password):
 
 def create_access_token(data: dict, expires_delta: int = ACCESS_TOKEN_EXPIRE_MINUTES):
     to_encode = data.copy()
-    to_encode.update({"exp": expires_delta})
+    tz_utc = pytz.utc
+    expire = datetime.now(tz_utc) + timedelta(minutes=expires_delta)
+    to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -54,18 +75,21 @@ def authenticate_user(db, username: str, password: str):
     return user
 
 @app.post("/register/")
-def register(username: str, password: str, db: Session = Depends(get_db)):
-    hashed_password = get_password_hash(password)
-    user = User(username=username, hashed_password=hashed_password)
-    db.add(user)
+def register(user: UserCreate, db: Session = Depends(get_db)):
+    existing_user = db.query(User).filter(User.username == user.username).first()
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already registered")
+    hashed_password = get_password_hash(user.password)
+    new_user = User(username=user.username, hashed_password=hashed_password)
+    db.add(new_user)
     db.commit()
-    db.refresh(user)
+    db.refresh(new_user)
     return {"message": "User registered successfully"}
 
-@app.post("/token")
-def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
-    user = authenticate_user(db, form_data.username, form_data.password)
-    if not user:
+@app.post("/token", response_model=Token)
+def login_for_access_token(user: UserCreate, db: Session = Depends(get_db)):
+    user_data = authenticate_user(db, user.username, user.password)
+    if not user_data:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -74,7 +98,7 @@ def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2Passw
     access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
 
-@app.get("/users/me/")
+@app.get("/users/me/", response_model=UserResponse)
 def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -91,4 +115,4 @@ def read_users_me(token: str = Depends(oauth2_scheme), db: Session = Depends(get
     user = get_user(db, username=username)
     if user is None:
         raise credentials_exception
-    return user
+    return UserResponse(username=user.username, password=user.hashed_password)

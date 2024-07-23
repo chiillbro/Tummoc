@@ -24,7 +24,6 @@ def calculate_distance(coords: Coordinates):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error calculating distance: {str(e)}")
 
-# A simple test endpoint to check if the server is running
 @app.get("/")
 def read_root():
     return {"message": "Hello World"}
